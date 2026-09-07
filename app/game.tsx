@@ -245,40 +245,44 @@ function Filmstrip({
   phase: Phase;
 }) {
   return (
-    <div
-      className="filmstrip"
-      aria-label={`Progreso: ${answers.length} de ${rounds.length}`}
-    >
-      {rounds.map((round, index) => {
-        const answer = answers.find((item) => item.clipId === round.id);
-        const isCurrent = index === currentIndex && phase !== 'finished';
-        const status = answer
-          ? answer.correct
-            ? 'correct'
-            : 'wrong'
-          : isCurrent
-            ? 'current'
-            : 'pending';
-        return (
-          <span
-            key={`${round.id}-${index}`}
-            className="filmstrip-frame"
-            data-status={status}
-            aria-hidden="true"
-          >
-            {answer ? (
-              answer.correct ? (
-                <Check />
+    <>
+      <progress
+        className="sr-only"
+        max={rounds.length}
+        value={answers.length}
+        aria-label={`Progreso: ${answers.length} de ${rounds.length}`}
+      />
+      <div className="filmstrip" aria-hidden="true">
+        {rounds.map((round, index) => {
+          const answer = answers.find((item) => item.clipId === round.id);
+          const isCurrent = index === currentIndex && phase !== 'finished';
+          const status = answer
+            ? answer.correct
+              ? 'correct'
+              : 'wrong'
+            : isCurrent
+              ? 'current'
+              : 'pending';
+          return (
+            <span
+              key={`${round.id}-${index}`}
+              className="filmstrip-frame"
+              data-status={status}
+            >
+              {answer ? (
+                answer.correct ? (
+                  <Check />
+                ) : (
+                  <X />
+                )
               ) : (
-                <X />
-              )
-            ) : (
-              String(index + 1).padStart(2, '0')
-            )}
-          </span>
-        );
-      })}
-    </div>
+                String(index + 1).padStart(2, '0')
+              )}
+            </span>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -292,9 +296,9 @@ export function Game() {
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [mediaAttempt, setMediaAttempt] = useState(0);
+  const [driveConfirmed, setDriveConfirmed] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const nextButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolStateRef = useRef<{
     phase: Phase;
     mediaReady: boolean;
@@ -347,6 +351,9 @@ export function Game() {
   const requestedRoundCount =
     catalog?.settings?.roundCount ?? DEFAULT_ROUND_COUNT;
   const currentClip = rounds[currentIndex];
+  const isDriveClip = currentClip?.media.provider === 'drive';
+  const canGuess =
+    mediaReady && !mediaError && (!isDriveClip || driveConfirmed);
   const currentAnswer = currentClip
     ? answers.find((answer) => answer.clipId === currentClip.id)
     : undefined;
@@ -370,15 +377,24 @@ export function Game() {
   }, [answers]);
 
   useEffect(() => {
-    if (phase === 'answered') nextButtonRef.current?.focus();
-  }, [phase]);
-
-  useEffect(() => {
     if (!mediaReady || reducedMotion || phase !== 'playing') return;
     videoRef.current?.play().catch(() => {
       // Native controls remain available when autoplay is blocked.
     });
   }, [mediaReady, phase, reducedMotion]);
+
+  useEffect(() => {
+    if (
+      phase !== 'playing' ||
+      currentClip?.media.provider !== 'drive' ||
+      mediaReady ||
+      mediaError
+    ) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setMediaError(true), 12_000);
+    return () => window.clearTimeout(timeout);
+  }, [currentClip?.id, currentClip?.media.provider, mediaAttempt, mediaError, mediaReady, phase]);
 
   const startGame = useCallback(() => {
     if (!catalog) return;
@@ -389,12 +405,13 @@ export function Game() {
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
+    setDriveConfirmed(false);
     setPhase('playing');
   }, [catalog, requestedRoundCount]);
 
   const submitGuess = useCallback(
     (guess: Truth) => {
-      if (phase !== 'playing' || !mediaReady || !currentClip) return;
+      if (phase !== 'playing' || !canGuess || !currentClip) return;
       const correct = guess === currentClip.truth;
       setAnswers((previous) => [
         ...previous,
@@ -408,7 +425,7 @@ export function Game() {
       videoRef.current?.pause();
       setPhase('answered');
     },
-    [currentClip, mediaReady, phase],
+    [canGuess, currentClip, phase],
   );
 
   const advance = useCallback(() => {
@@ -421,13 +438,14 @@ export function Game() {
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
+    setDriveConfirmed(false);
     setPhase('playing');
   }, [currentIndex, phase, rounds.length]);
 
   useEffect(() => {
     toolStateRef.current = {
       phase,
-      mediaReady,
+      mediaReady: canGuess,
       currentClip,
       currentIndex,
       roundCount: rounds.length,
@@ -439,7 +457,7 @@ export function Game() {
     advance,
     currentClip,
     currentIndex,
-    mediaReady,
+    canGuess,
     phase,
     rounds.length,
     startGame,
@@ -548,7 +566,24 @@ export function Game() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (phase === 'playing' && mediaReady) {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('a, button, input, select, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+      if (phase === 'playing' && canGuess) {
         if (event.key.toLowerCase() === 'c') submitGuess('camera');
         if (event.key.toLowerCase() === 'i') submitGuess('ai');
       } else if (phase === 'answered' && event.key === 'Enter') {
@@ -557,24 +592,32 @@ export function Game() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [advance, mediaReady, phase, submitGuess]);
+  }, [advance, canGuess, phase, submitGuess]);
 
   const retryMedia = () => {
     setMediaError(false);
     setMediaReady(false);
+    setDriveConfirmed(false);
     setMediaAttempt((attempt) => attempt + 1);
   };
 
   const skipBrokenMedia = () => {
-    if (currentIndex >= rounds.length - 1) {
-      setPhase('finished');
-      return;
-    }
-    setCurrentIndex((index) => index + 1);
+    const remainingRounds = rounds.filter((_, index) => index !== currentIndex);
+    setRounds(remainingRounds);
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
-    setPhase('playing');
+    setDriveConfirmed(false);
+
+    if (!remainingRounds.length) {
+      setCurrentIndex(0);
+      setPhase('intro');
+    } else if (currentIndex >= remainingRounds.length) {
+      setCurrentIndex(remainingRounds.length - 1);
+      setPhase('finished');
+    } else {
+      setPhase('playing');
+    }
   };
 
   const resultMessage =
@@ -590,7 +633,8 @@ export function Game() {
       <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center justify-between px-5 py-5 sm:px-8 sm:py-7">
         <button
           type="button"
-          onClick={() => phase !== 'loading' && setPhase('intro')}
+          onClick={() => catalog && phase !== 'loading' && setPhase('intro')}
+          disabled={!catalog || phase === 'loading'}
           className="group flex items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4 focus-visible:ring-offset-background"
           aria-label="Volver al inicio"
         >
@@ -639,13 +683,23 @@ export function Game() {
                 Revisa <code>public/clips.json</code>. Detalle: {catalogError}
               </AlertDescription>
             </Alert>
+            <Button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-5 rounded-none bg-black text-white hover:bg-black/80"
+            >
+              <RefreshCw /> Volver a intentar
+            </Button>
           </section>
         )}
 
         {phase === 'intro' && catalog && (
           <section className="intro-layout mx-auto w-full max-w-[1040px] pt-[clamp(1.5rem,6vh,5rem)]">
             <div className="relative">
-              <p className="eyebrow mb-4">10 decisiones · una sola mirada</p>
+              <p className="eyebrow mb-4">
+                {Math.min(requestedRoundCount, catalog.clips.length)} decisiones ·
+                una sola mirada
+              </p>
               <h1 className="display-title max-w-[850px]">
                 ¿CÁMARA
                 <span className="title-slash" aria-hidden="true">
@@ -705,7 +759,8 @@ export function Game() {
                 <Film className="size-4" />
                 <span>
                   Modo demostración: añade tus vídeos en{' '}
-                  <code>public/clips.json</code> para completar las 10 rondas.
+                  <code>public/clips.json</code> para completar las rondas
+                  configuradas.
                 </span>
               </div>
             )}
@@ -754,7 +809,16 @@ export function Game() {
                     </div>
                   )}
 
-                  {mediaError ? (
+                  {phase === 'answered' && isDriveClip ? (
+                    <div className="absolute inset-0 grid place-items-center bg-[#090a09] p-6 text-center text-white">
+                      <div>
+                        <Film className="mx-auto mb-3 size-7 text-primary" />
+                        <p className="font-mono text-xs uppercase tracking-[0.16em] text-white/70">
+                          Reproducción detenida
+                        </p>
+                      </div>
+                    </div>
+                  ) : mediaError ? (
                     <div className="absolute inset-0 z-20 grid place-items-center bg-[#090a09] p-6 text-white">
                       <div className="max-w-sm text-center">
                         <TriangleAlert className="mx-auto mb-4 size-7 text-[#ff7668]" />
@@ -773,15 +837,13 @@ export function Game() {
                           >
                             <RefreshCw /> Reintentar
                           </Button>
-                          {rounds.length > 1 && (
-                            <Button
-                              variant="ghost"
-                              onClick={skipBrokenMedia}
-                              className="h-11 text-white/70 hover:bg-white/10 hover:text-white"
-                            >
-                              Saltar sin penalización
-                            </Button>
-                          )}
+                          <Button
+                            variant="ghost"
+                            onClick={skipBrokenMedia}
+                            className="h-11 text-white/80 hover:bg-white/10 hover:text-white"
+                          >
+                            Omitir sin penalización
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -811,13 +873,14 @@ export function Game() {
                     </div>
                   )}
                 </div>
-                <div className="flex min-h-11 items-center justify-between gap-3 border-t border-white/10 px-4 py-2 font-mono text-[0.68rem] uppercase tracking-[0.13em] text-white/48">
+                <div className="flex min-h-11 items-center justify-between gap-3 border-t border-white/10 px-4 py-2 font-mono text-[0.68rem] uppercase tracking-[0.13em] text-white/70">
                   <span>
                     {currentClip.media.provider === 'drive'
                       ? 'Google Drive · reproductor insertado'
                       : 'Fuente directa · MP4/WebM'}
                   </span>
-                  {currentClip.media.provider === 'drive' &&
+                  {phase === 'answered' &&
+                    currentClip.media.provider === 'drive' &&
                     getDriveDetails(currentClip.media) && (
                       <a
                         href={getDriveDetails(currentClip.media)?.openUrl}
@@ -835,22 +898,53 @@ export function Game() {
                 {phase === 'playing' ? (
                   <>
                     <div>
-                      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-black/45">
+                      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-black/65">
                         Tu veredicto
                       </p>
                       <h2 className="mt-2 text-2xl font-black leading-tight tracking-[-0.035em]">
                         ¿Cómo se creó?
                       </h2>
-                      <p className="mt-2 text-sm leading-relaxed text-black/58">
+                      <p className="mt-2 text-sm leading-relaxed text-black/70">
                         Reproduce el clip antes de elegir. No podrás cambiar la
                         respuesta.
                       </p>
                     </div>
 
+                    {isDriveClip && !driveConfirmed && mediaReady && !mediaError && (
+                      <div className="mt-6 border border-black/15 bg-black/[0.035] p-4">
+                        <p className="text-sm font-semibold">
+                          ¿El reproductor de Drive funciona?
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-black/65">
+                          Confírmalo para activar las respuestas. Si Drive muestra
+                          permisos, inicio de sesión o cuota agotada, omite el vídeo.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => setDriveConfirmed(true)}
+                            className="rounded-none bg-black text-white hover:bg-black/80"
+                          >
+                            Sí, se reproduce
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={skipBrokenMedia}
+                            className="rounded-none text-black/70 hover:bg-black/10 hover:text-black"
+                          >
+                            Omitir
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-7 grid gap-3">
                       <Button
                         variant="outline"
-                        disabled={!mediaReady || mediaError}
+                        disabled={!canGuess}
                         onClick={() => submitGuess('camera')}
                         className="choice-button"
                       >
@@ -864,7 +958,7 @@ export function Game() {
                       </Button>
                       <Button
                         variant="outline"
-                        disabled={!mediaReady || mediaError}
+                        disabled={!canGuess}
                         onClick={() => submitGuess('ai')}
                         className="choice-button"
                       >
@@ -878,7 +972,7 @@ export function Game() {
                       </Button>
                     </div>
 
-                    <p className="mt-auto pt-6 text-xs leading-relaxed text-black/43">
+                    <p className="mt-auto pt-6 text-xs leading-relaxed text-black/65">
                       La resolución, el audio y los nombres de archivo no
                       deberían revelar la respuesta.
                     </p>
@@ -894,7 +988,7 @@ export function Game() {
                           {currentAnswer.correct ? <Check /> : <X />}
                         </span>
                         <div>
-                          <p className="font-mono text-[0.68rem] font-bold uppercase tracking-[0.17em] text-black/40">
+                          <p className="font-mono text-[0.68rem] font-bold uppercase tracking-[0.17em] text-black/65">
                             Resultado
                           </p>
                           <h2 className="text-2xl font-black tracking-[-0.035em]">
@@ -906,7 +1000,7 @@ export function Game() {
                       </div>
 
                       <div className="mt-6 border-y border-black/12 py-5">
-                        <p className="font-mono text-[0.66rem] font-bold uppercase tracking-[0.16em] text-black/40">
+                        <p className="font-mono text-[0.66rem] font-bold uppercase tracking-[0.16em] text-black/65">
                           Procedencia
                         </p>
                         <p className="mt-2 text-xl font-black">
@@ -915,7 +1009,7 @@ export function Game() {
                         <p className="mt-2 text-sm leading-relaxed text-black/62">
                           {currentClip.provenance.detail}
                         </p>
-                        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 font-mono text-[0.68rem] uppercase tracking-[0.08em] text-black/50">
+                        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 font-mono text-[0.68rem] uppercase tracking-[0.08em] text-black/65">
                           {currentClip.provenance.model && (
                             <span>Modelo: {currentClip.provenance.model}</span>
                           )}
@@ -943,7 +1037,6 @@ export function Game() {
                       </div>
 
                       <Button
-                        ref={nextButtonRef}
                         onClick={advance}
                         className="mt-auto h-13 rounded-none bg-black px-5 text-sm font-bold uppercase tracking-[0.08em] text-white hover:bg-black/82"
                       >
@@ -952,7 +1045,7 @@ export function Game() {
                           : 'Siguiente vídeo'}
                         <ArrowRight data-icon="inline-end" />
                       </Button>
-                      <span className="mt-2 text-center font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/35">
+                      <span className="mt-2 text-center font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/65">
                         También puedes pulsar Enter
                       </span>
                     </div>
