@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "settings": {
+    "roundCount": 10
+  },
+  "clips": [
+    {
+      "id": "clip-demo-001",
+      "enabled": true,
+      "demo": true,
+      "truth": "camera",
+      "media": {
+        "provider": "direct",
+        "url": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+      },
+      "provenance": {
+        "label": "Grabado con cámara",
+        "detail": "Clip CC0 utilizado por MDN como muestra técnica. Sustitúyelo por uno de tus vídeos antes de publicar el juego.",
+        "sourceName": "Ver muestra de MDN",
+        "sourceUrl": "https://interactive-examples.mdn.mozilla.net/pages/tabbed/video.html",
+        "license": "CC0"
+      }
+    }
+  ]
+}

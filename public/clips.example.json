@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "settings": {
+    "roundCount": 10
+  },
+  "clips": [
+    {
+      "id": "clip-001",
+      "enabled": true,
+      "truth": "camera",
+      "media": {
+        "provider": "drive",
+        "shareUrl": "https://drive.google.com/file/d/ID_CLIP_001/view?usp=sharing"
+      },
+      "provenance": {
+        "label": "Grabado con cámara",
+        "detail": "Describe quién lo grabó y cómo verificaste el original.",
+        "sourceName": "Nombre del autor o fuente",
+        "sourceUrl": "https://fuente.example/clip-001",
+        "license": "Licencia o permiso",
+        "date": "2026-09"
+      }
+    },
+    {
+      "id": "clip-002",
+      "enabled": true,
+      "truth": "ai",
+      "media": {
+        "provider": "drive",
+        "shareUrl": "https://drive.google.com/file/d/ID_CLIP_002/view?usp=sharing"
+      },
+      "provenance": {
+        "label": "Generado con IA",
+        "detail": "Describe la generación y conserva el prompt fuera de la web si no quieres publicarlo.",
+        "model": "Proveedor y versión",
+        "license": "Generación propia",
+        "date": "2026-09"
+      }
+    },
+    {
+      "id": "clip-003",
+      "enabled": true,
+      "truth": "camera",
+      "media": {
+        "provider": "direct",
+        "url": "https://cdn.example/clip-003.mp4",
+        "poster": "https://cdn.example/clip-003.jpg"
+      },
+      "provenance": {
+        "label": "Grabado con cámara",
+        "detail": "Ejemplo de vídeo servido desde una URL MP4 directa.",
+        "license": "Licencia o permiso",
+        "date": "2026-09"
+      }
+    }
+  ]
+}
+
