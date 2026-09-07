@@ -14,9 +14,9 @@
         "url": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
       },
       "provenance": {
-        "label": "Grabado con cámara",
-        "detail": "Clip CC0 utilizado por MDN como muestra técnica. Sustitúyelo por uno de tus vídeos antes de publicar el juego.",
-        "sourceName": "Ver muestra de MDN",
+        "label": "Shot on camera",
+        "detail": "A CC0 clip used by MDN as a technical sample. Replace it with one of your own videos before sharing the game.",
+        "sourceName": "View the MDN sample",
         "sourceUrl": "https://interactive-examples.mdn.mozilla.net/pages/tabbed/video.html",
         "license": "CC0"
       }
