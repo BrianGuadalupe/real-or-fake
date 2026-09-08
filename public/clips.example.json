@@ -18,6 +18,7 @@
         "sourceName": "Creator or source name",
         "sourceUrl": "https://source.example/clip-001",
         "license": "License or permission",
+        "licenseUrl": "https://license.example/terms",
         "date": "2026-09"
       }
     },

@@ -56,6 +56,7 @@ type Clip = {
     sourceName?: string;
     sourceUrl?: string;
     license?: string;
+    licenseUrl?: string;
     model?: string;
     date?: string;
   };
@@ -144,11 +145,10 @@ function getDriveDetails(media: DriveMedia) {
     try {
       const embedUrl = new URL(media.embedUrl);
       if (embedUrl.hostname === 'drive.google.com') {
-        return {
-          embedUrl: embedUrl.toString(),
-          openUrl:
-            media.shareUrl ?? embedUrl.toString().replace('/preview', '/view'),
-        };
+        const pathMatch = embedUrl.pathname.match(/\/file\/d\/([^/]+)/);
+        fileId ||=
+          pathMatch?.[1] ?? embedUrl.searchParams.get('id') ?? undefined;
+        resourceKey ||= embedUrl.searchParams.get('resourcekey') ?? undefined;
       }
     } catch {
       return null;
@@ -158,15 +158,19 @@ function getDriveDetails(media: DriveMedia) {
   if (!fileId) return null;
 
   const encodedId = encodeURIComponent(fileId);
-  const suffix = resourceKey
-    ? `?resourcekey=${encodeURIComponent(resourceKey)}`
-    : '';
+  const openParams = new URLSearchParams();
+  const streamParams = new URLSearchParams({ id: fileId, export: 'download' });
+  if (resourceKey) {
+    openParams.set('resourcekey', resourceKey);
+    streamParams.set('resourcekey', resourceKey);
+  }
+  const openSuffix = openParams.size ? `?${openParams.toString()}` : '';
 
   return {
-    embedUrl: `https://drive.google.com/file/d/${encodedId}/preview${suffix}`,
+    streamUrl: `https://drive.usercontent.google.com/download?${streamParams.toString()}`,
     openUrl:
       media.shareUrl ??
-      `https://drive.google.com/file/d/${encodedId}/view${suffix}`,
+      `https://drive.google.com/file/d/${encodedId}/view${openSuffix}`,
   };
 }
 
@@ -203,34 +207,26 @@ function MediaStage({
     if (clip.media.provider === 'drive' && !driveDetails) onError();
   }, [clip.media.provider, driveDetails, onError]);
 
-  if (clip.media.provider === 'drive') {
-    if (!driveDetails) return null;
-    return (
-      <iframe
-        key={`${clip.id}-${attempt}`}
-        className="h-full w-full border-0"
-        src={driveDetails.embedUrl}
-        title="Video for this round"
-        allow="autoplay; fullscreen; picture-in-picture"
-        allowFullScreen
-        referrerPolicy="strict-origin-when-cross-origin"
-        onLoad={onReady}
-      />
-    );
-  }
+  const mediaUrl =
+    clip.media.provider === 'drive' ? driveDetails?.streamUrl : clip.media.url;
+
+  if (!mediaUrl) return null;
 
   return (
     <video
       key={`${clip.id}-${attempt}`}
       ref={videoRef}
       className="h-full w-full object-contain"
-      src={clip.media.url}
-      poster={clip.media.poster}
+      src={mediaUrl}
+      poster={clip.media.provider === 'direct' ? clip.media.poster : undefined}
+      crossOrigin={clip.media.provider === 'drive' ? 'anonymous' : undefined}
       controls
-      controlsList="nodownload"
+      controlsList="nodownload noremoteplayback"
+      disablePictureInPicture
       muted
       playsInline
       preload="metadata"
+      onLoadedMetadata={onReady}
       onLoadedData={onReady}
       onCanPlay={onReady}
       onError={onError}
@@ -303,7 +299,6 @@ export function Game() {
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [mediaAttempt, setMediaAttempt] = useState(0);
-  const [driveConfirmed, setDriveConfirmed] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const toolStateRef = useRef<{
@@ -358,9 +353,7 @@ export function Game() {
   const requestedRoundCount =
     catalog?.settings?.roundCount ?? DEFAULT_ROUND_COUNT;
   const currentClip = rounds[currentIndex];
-  const isDriveClip = currentClip?.media.provider === 'drive';
-  const canGuess =
-    mediaReady && !mediaError && (!isDriveClip || driveConfirmed);
+  const canGuess = mediaReady && !mediaError;
   const currentAnswer = currentClip
     ? answers.find((answer) => answer.clipId === currentClip.id)
     : undefined;
@@ -391,12 +384,7 @@ export function Game() {
   }, [mediaReady, phase, reducedMotion]);
 
   useEffect(() => {
-    if (
-      phase !== 'playing' ||
-      currentClip?.media.provider !== 'drive' ||
-      mediaReady ||
-      mediaError
-    ) {
+    if (phase !== 'playing' || mediaReady || mediaError) {
       return;
     }
     const timeout = window.setTimeout(() => setMediaError(true), 12_000);
@@ -419,7 +407,6 @@ export function Game() {
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
-    setDriveConfirmed(false);
     setPhase('playing');
   }, [catalog, requestedRoundCount]);
 
@@ -452,7 +439,6 @@ export function Game() {
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
-    setDriveConfirmed(false);
     setPhase('playing');
   }, [currentIndex, phase, rounds.length]);
 
@@ -620,7 +606,6 @@ export function Game() {
   const retryMedia = () => {
     setMediaError(false);
     setMediaReady(false);
-    setDriveConfirmed(false);
     setMediaAttempt((attempt) => attempt + 1);
   };
 
@@ -630,7 +615,6 @@ export function Game() {
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
-    setDriveConfirmed(false);
 
     if (!remainingRounds.length) {
       setCurrentIndex(0);
@@ -841,16 +825,7 @@ export function Game() {
                     </div>
                   )}
 
-                  {phase === 'answered' && isDriveClip ? (
-                    <div className="absolute inset-0 grid place-items-center bg-[#090a09] p-6 text-center text-white">
-                      <div>
-                        <Film className="mx-auto mb-3 size-7 text-primary" />
-                        <p className="font-mono text-xs uppercase tracking-[0.16em] text-white/70">
-                          Playback stopped
-                        </p>
-                      </div>
-                    </div>
-                  ) : mediaError ? (
+                  {mediaError ? (
                     <div className="absolute inset-0 z-20 grid place-items-center bg-[#090a09] p-6 text-white">
                       <div className="max-w-sm text-center">
                         <TriangleAlert className="mx-auto mb-4 size-7 text-primary" />
@@ -858,8 +833,8 @@ export function Game() {
                           This video did not load
                         </h2>
                         <p className="mt-2 text-sm leading-relaxed text-white/60">
-                          Check that the file is shared publicly, then try
-                          again.
+                          Check that the source is available and, for Drive,
+                          shared publicly. Then try again.
                         </p>
                         <div className="mt-5 flex flex-wrap justify-center gap-3">
                           <Button
@@ -907,9 +882,11 @@ export function Game() {
                 </div>
                 <div className="flex min-h-11 items-center justify-between gap-3 border-t border-white/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.13em] text-white/70">
                   <span>
-                    {currentClip.media.provider === 'drive'
-                      ? 'Google Drive / embedded player'
-                      : 'Direct source / MP4 or WebM'}
+                    {phase === 'answered'
+                      ? currentClip.media.provider === 'drive'
+                        ? 'Google Drive / source file'
+                        : 'Licensed direct source'
+                      : 'Source hidden until answer'}
                   </span>
                   {phase === 'answered' &&
                     currentClip.media.provider === 'drive' &&
@@ -940,41 +917,6 @@ export function Game() {
                         Play the clip before you choose. Your answer is final.
                       </p>
                     </div>
-
-                    {isDriveClip &&
-                      !driveConfirmed &&
-                      mediaReady &&
-                      !mediaError && (
-                        <div className="mt-6 border border-black/15 bg-black/[0.035] p-4">
-                          <p className="text-sm font-semibold">
-                            Is the Drive player working?
-                          </p>
-                          <p className="mt-1 text-xs leading-relaxed text-black/65">
-                            Confirm playback to unlock the choices. If Drive
-                            shows a permission, sign-in or quota message, skip
-                            this clip.
-                          </p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => setDriveConfirmed(true)}
-                              className="rounded-none bg-black text-white hover:bg-primary"
-                            >
-                              Yes, it plays
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={skipBrokenMedia}
-                              className="rounded-none text-black/70 hover:bg-black/10 hover:text-black"
-                            >
-                              Skip clip
-                            </Button>
-                          </div>
-                        </div>
-                      )}
 
                     <div className="mt-7 grid gap-3">
                       <Button
@@ -1051,11 +993,22 @@ export function Game() {
                           {currentClip.provenance.date && (
                             <span>Date: {currentClip.provenance.date}</span>
                           )}
-                          {currentClip.provenance.license && (
-                            <span>
-                              License: {currentClip.provenance.license}
-                            </span>
-                          )}
+                          {currentClip.provenance.license &&
+                            (currentClip.provenance.licenseUrl ? (
+                              <a
+                                href={currentClip.provenance.licenseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 underline decoration-black/25 underline-offset-4 hover:decoration-black"
+                              >
+                                License: {currentClip.provenance.license}
+                                <ExternalLink className="size-3" />
+                              </a>
+                            ) : (
+                              <span>
+                                License: {currentClip.provenance.license}
+                              </span>
+                            ))}
                         </div>
                         {currentClip.provenance.sourceUrl && (
                           <a
