@@ -116,6 +116,14 @@
   color: var(--card-foreground);
 }
 
+.media-preloader {
+  pointer-events: none;
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
 .display-title {
   font-family: 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
   font-size: clamp(4.5rem, 14vw, 10.5rem);

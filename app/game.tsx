@@ -31,20 +31,12 @@ type DirectMedia = {
   poster?: string;
 };
 
-type DriveMedia = {
-  provider: 'drive';
-  fileId?: string;
-  resourceKey?: string;
-  shareUrl?: string;
-  embedUrl?: string;
-};
-
 type Clip = {
   id: string;
   enabled?: boolean;
   demo?: boolean;
   truth: Truth;
-  media: DirectMedia | DriveMedia;
+  media: DirectMedia;
   provenance: {
     label: string;
     detail: string;
@@ -89,7 +81,7 @@ type WebMcpContext = {
   ) => void | Promise<void>;
 };
 
-const DEFAULT_ROUND_COUNT = 10;
+const DEFAULT_ROUND_COUNT = 14;
 
 function shuffle<T>(items: T[]) {
   const copy = [...items];
@@ -121,54 +113,6 @@ function buildRounds(clips: Clip[], requestedCount: number) {
   ]);
 }
 
-function getDriveDetails(media: DriveMedia) {
-  let fileId = media.fileId?.trim();
-  let resourceKey = media.resourceKey?.trim();
-
-  if (media.shareUrl) {
-    try {
-      const shareUrl = new URL(media.shareUrl);
-      const pathMatch = shareUrl.pathname.match(/\/file\/d\/([^/]+)/);
-      fileId ||= pathMatch?.[1] ?? shareUrl.searchParams.get('id') ?? undefined;
-      resourceKey ||= shareUrl.searchParams.get('resourcekey') ?? undefined;
-    } catch {
-      // The validation below handles malformed links.
-    }
-  }
-
-  if (media.embedUrl) {
-    try {
-      const embedUrl = new URL(media.embedUrl);
-      if (embedUrl.hostname === 'drive.google.com') {
-        const pathMatch = embedUrl.pathname.match(/\/file\/d\/([^/]+)/);
-        fileId ||=
-          pathMatch?.[1] ?? embedUrl.searchParams.get('id') ?? undefined;
-        resourceKey ||= embedUrl.searchParams.get('resourcekey') ?? undefined;
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  if (!fileId) return null;
-
-  const encodedId = encodeURIComponent(fileId);
-  const openParams = new URLSearchParams();
-  const streamParams = new URLSearchParams({ id: fileId, export: 'download' });
-  if (resourceKey) {
-    openParams.set('resourcekey', resourceKey);
-    streamParams.set('resourcekey', resourceKey);
-  }
-  const openSuffix = openParams.size ? `?${openParams.toString()}` : '';
-
-  return {
-    streamUrl: `https://drive.usercontent.google.com/download?${streamParams.toString()}`,
-    openUrl:
-      media.shareUrl ??
-      `https://drive.google.com/file/d/${encodedId}/view${openSuffix}`,
-  };
-}
-
 function isClip(value: unknown): value is Clip {
   if (!value || typeof value !== 'object') return false;
   const clip = value as Partial<Clip>;
@@ -176,7 +120,9 @@ function isClip(value: unknown): value is Clip {
     clip.id &&
     (clip.truth === 'camera' || clip.truth === 'ai') &&
     clip.media &&
-    (clip.media.provider === 'direct' || clip.media.provider === 'drive') &&
+    clip.media.provider === 'direct' &&
+    typeof clip.media.url === 'string' &&
+    clip.media.url.length > 0 &&
     clip.provenance?.label &&
     clip.provenance?.detail,
   );
@@ -195,39 +141,52 @@ function MediaStage({
   onError: () => void;
   videoRef: React.RefObject<HTMLVideoElement | null>;
 }) {
-  const driveDetails =
-    clip.media.provider === 'drive' ? getDriveDetails(clip.media) : null;
-
-  useEffect(() => {
-    if (clip.media.provider === 'drive' && !driveDetails) onError();
-  }, [clip.media.provider, driveDetails, onError]);
-
-  const mediaUrl =
-    clip.media.provider === 'drive' ? driveDetails?.streamUrl : clip.media.url;
-
-  if (!mediaUrl) return null;
-
   return (
     <video
       key={`${clip.id}-${attempt}`}
       ref={videoRef}
       className="h-full w-full object-contain"
-      src={mediaUrl}
-      poster={clip.media.provider === 'direct' ? clip.media.poster : undefined}
-      crossOrigin={clip.media.provider === 'drive' ? 'anonymous' : undefined}
+      src={clip.media.url}
+      poster={clip.media.poster}
       controls
       controlsList="nodownload noremoteplayback"
       disablePictureInPicture
       muted
       playsInline
-      preload="metadata"
-      onLoadedMetadata={onReady}
+      preload="auto"
       onLoadedData={onReady}
       onCanPlay={onReady}
-      onError={onError}
+      onError={(event) => {
+        const error = event.currentTarget.error;
+        console.error('Video failed to load', {
+          clipId: clip.id,
+          code: error?.code,
+          message: error?.message,
+          networkState: event.currentTarget.networkState,
+          readyState: event.currentTarget.readyState,
+        });
+        onError();
+      }}
     >
       Your browser cannot play this video.
     </video>
+  );
+}
+
+function MediaPreloader({ clip }: { clip?: Clip }) {
+  if (!clip) return null;
+
+  return (
+    <video
+      key={`preload-${clip.id}`}
+      className="media-preloader"
+      src={clip.media.url}
+      aria-hidden="true"
+      muted
+      playsInline
+      preload="auto"
+      tabIndex={-1}
+    />
   );
 }
 
@@ -238,6 +197,7 @@ export function Game() {
   const [rounds, setRounds] = useState<Clip[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>([]);
+  const [skippedClipIds, setSkippedClipIds] = useState<string[]>([]);
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [mediaAttempt, setMediaAttempt] = useState(0);
@@ -269,7 +229,7 @@ export function Game() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/clips.json', { signal: controller.signal })
+    fetch('clips.json', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return (await response.json()) as Catalog;
@@ -295,6 +255,7 @@ export function Game() {
   const requestedRoundCount =
     catalog?.settings?.roundCount ?? DEFAULT_ROUND_COUNT;
   const currentClip = rounds[currentIndex];
+  const nextClip = rounds[currentIndex + 1];
   const canGuess = mediaReady && !mediaError;
   const currentAnswer = currentClip
     ? answers.find((answer) => answer.clipId === currentClip.id)
@@ -312,7 +273,7 @@ export function Game() {
     if (phase !== 'playing' || mediaReady || mediaError) {
       return;
     }
-    const timeout = window.setTimeout(() => setMediaError(true), 12_000);
+    const timeout = window.setTimeout(() => setMediaError(true), 30_000);
     return () => window.clearTimeout(timeout);
   }, [
     currentClip?.id,
@@ -328,6 +289,7 @@ export function Game() {
     const nextRounds = buildRounds(catalog.clips, requestedRoundCount);
     setRounds(nextRounds);
     setAnswers([]);
+    setSkippedClipIds([]);
     setCurrentIndex(0);
     setMediaReady(false);
     setMediaError(false);
@@ -534,19 +496,20 @@ export function Game() {
   };
 
   const skipBrokenMedia = () => {
-    const remainingRounds = rounds.filter((_, index) => index !== currentIndex);
-    setRounds(remainingRounds);
+    if (!currentClip) return;
+    setSkippedClipIds((previous) =>
+      previous.includes(currentClip.id)
+        ? previous
+        : [...previous, currentClip.id],
+    );
     setMediaReady(false);
     setMediaError(false);
     setMediaAttempt(0);
 
-    if (!remainingRounds.length) {
-      setCurrentIndex(0);
-      setPhase('intro');
-    } else if (currentIndex >= remainingRounds.length) {
-      setCurrentIndex(remainingRounds.length - 1);
+    if (currentIndex >= rounds.length - 1) {
       setPhase('finished');
     } else {
+      setCurrentIndex((index) => index + 1);
       setPhase('playing');
     }
   };
@@ -554,6 +517,7 @@ export function Game() {
   return (
     <main className="site-shell min-h-dvh text-foreground">
       <div className="ambient-grid" aria-hidden="true" />
+      {mediaReady && <MediaPreloader clip={nextClip} />}
       <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center border-b border-foreground/20 px-5 py-4 sm:px-8">
         <button
           type="button"
@@ -666,8 +630,7 @@ export function Game() {
                           This video did not load
                         </h2>
                         <p className="mt-2 text-sm leading-relaxed text-white/60">
-                          Check that the source is available and, for Drive,
-                          shared publicly. Then try again.
+                          Retry or skip this round.
                         </p>
                         <div className="mt-5 flex flex-wrap justify-center gap-3">
                           <Button
@@ -682,7 +645,7 @@ export function Game() {
                             onClick={skipBrokenMedia}
                             className="h-11 text-white/80 hover:bg-white/10 hover:text-white"
                           >
-                            Skip without penalty
+                            Skip
                           </Button>
                         </div>
                       </div>
@@ -813,7 +776,7 @@ export function Game() {
           <section className="result-layout mx-auto flex w-full max-w-[900px] flex-col justify-center py-12">
             <div className="final-score border-y border-foreground/20 py-10">
               <strong>{score}</strong>
-              <span>/ {rounds.length}</span>
+              <span>/ {rounds.length - skippedClipIds.length}</span>
             </div>
             <Button
               size="lg"
