@@ -74,6 +74,18 @@ Comprobar la versión de producción:
 npm run build
 ```
 
+La compilación estática para GitHub Pages se genera en `dist/pages`:
+
+```bash
+npm run build:pages
+```
+
+## GitHub Pages
+
+El workflow `.github/workflows/deploy-pages.yml` publica automáticamente la web al hacer `push` a `main`. La compilación utiliza rutas relativas, por lo que los vídeos, el catálogo y los recursos de la interfaz funcionan dentro del subdirectorio asignado al repositorio.
+
+En la configuración del repositorio, **Settings → Pages → Source** debe estar establecido en **GitHub Actions**.
+
 ## Fuentes y licencias
 
 - [Pexels License](https://www.pexels.com/license/)
