@@ -534,7 +534,7 @@ export function Game() {
       <div className="ambient-grid" aria-hidden="true" />
       {!dataSaver && phase === 'intro' && <MediaPreloader clip={rounds[0]} />}
       {!dataSaver && phase === 'answered' && <MediaPreloader clip={nextClip} />}
-      <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center border-b border-foreground/20 px-5 py-4 sm:px-8">
+      <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center justify-between gap-4 border-b border-foreground/20 px-5 py-4 sm:px-8">
         <button
           type="button"
           onClick={() => catalog && phase !== 'loading' && setPhase('intro')}
@@ -545,10 +545,31 @@ export function Game() {
           <span className="brand-mark grid size-10 place-items-center bg-primary text-primary-foreground transition-transform group-hover:-translate-y-0.5">
             <span aria-hidden="true">R/F</span>
           </span>
-          <span className="text-sm font-black uppercase tracking-[-0.02em] text-foreground">
+          <span className="hidden text-sm font-black uppercase tracking-[-0.02em] text-foreground sm:inline">
             Real or Fake?
           </span>
         </button>
+
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <span
+            className="h-9 w-[5.5rem] bg-center bg-no-repeat sm:h-10 sm:w-[7.25rem]"
+            style={{
+              backgroundImage: "url('brands/nnormal.png')",
+              backgroundSize: '100% auto',
+            }}
+          >
+            <span className="sr-only">NNormal</span>
+          </span>
+          <span
+            className="h-9 w-[3.25rem] bg-center bg-no-repeat sm:h-10 sm:w-[4.25rem]"
+            style={{
+              backgroundImage: "url('brands/camper.png')",
+              backgroundSize: '100% auto',
+            }}
+          >
+            <span className="sr-only">Camper</span>
+          </span>
+        </div>
       </header>
 
       <div className="relative z-10 mx-auto flex w-full max-w-[1180px] flex-1 px-5 pb-8 sm:px-8 sm:pb-12">
