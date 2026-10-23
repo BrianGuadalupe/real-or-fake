@@ -1,16 +1,16 @@
 # Real or Fake?
 
-Juego web de 14 rondas para adivinar si un vídeo de calzado es real o está generado con inteligencia artificial. La interfaz está en inglés.
+Juego web de 10 rondas para adivinar si un vídeo es real o está generado con inteligencia artificial. La interfaz está en inglés.
 
 ## Catálogo actual
 
-`public/clips.json` contiene 14 vídeos activos y cada partida utiliza todos, en orden aleatorio:
+`public/clips.json` contiene 10 vídeos activos y cada partida utiliza todos, en orden aleatorio:
 
-- 7 vídeos generados con IA suministrados por el propietario. Sus originales están en Google Drive.
-- 4 vídeos reales procedentes de Pexels, bajo la Pexels License.
-- 3 vídeos reales procedentes de Wikimedia Commons, con su licencia indicada en el catálogo.
+- 5 vídeos generados con IA suministrados por el propietario. Sus originales están en Google Drive.
+- 3 vídeos reales procedentes de Pexels, bajo la Pexels License.
+- 2 vídeos reales procedentes de Wikimedia Commons, con su licencia indicada en el catálogo.
 
-Los 14 archivos que reproduce el juego están en `public/videos`. Todos son MP4 H.264 con `faststart` y usan nombres neutros para no revelar la respuesta.
+Los 10 archivos que reproduce el juego están en `public/videos`. Todos son MP4 H.264 con `faststart`, duran como máximo 6,5 segundos y usan nombres neutros para no revelar la respuesta. El lote optimizado pesa 10,7 MiB.
 
 ## Por qué el juego no reproduce directamente desde Drive
 
@@ -21,7 +21,7 @@ Drive se conserva como archivo original y como enlace de procedencia. Durante la
 ## Añadir o sustituir vídeos
 
 1. Comprueba la autoría, licencia o permiso del vídeo y conserva el original.
-2. Convierte el archivo a MP4 con H.264 o a WebM con VP9. Para una carga ágil, intenta que pese menos de 8 MB y, en MP4, activa `faststart`.
+2. Convierte el archivo a MP4 H.264 con `faststart`. Para este juego, intenta que dure como máximo 6,5 segundos y pese menos de 4 MiB.
 3. Copia el archivo a `public/videos` con un nombre neutro, por ejemplo `clip-015.mp4`.
 4. Añade su ficha a `public/clips.json` usando una ruta relativa.
 5. Ajusta `settings.roundCount` si quieres cambiar el número de rondas.
@@ -50,6 +50,25 @@ Ejemplo:
 ```
 
 También puedes partir de `public/clips.example.json`.
+
+## Elegir una carpeta de Google Drive
+
+GitHub Pages puede importar todos los vídeos de una carpeta pública antes de cada despliegue. Drive se utiliza como fuente; el juego sigue sirviendo copias MP4 optimizadas desde GitHub para evitar esperas y errores.
+
+La carpeta debe estar compartida como **Cualquier persona con el enlace**. Hay tres modos:
+
+- `fake`: todos los vídeos de la carpeta son Fake y sustituyen la colección IA actual. Los vídeos Real existentes se conservan.
+- `real`: todos son Real y sustituyen la colección Real actual. Los vídeos Fake existentes se conservan.
+- `subfolders`: la carpeta raíz contiene subcarpetas llamadas `Real` y `Fake`; sus vídeos sustituyen todo el catálogo.
+
+Para dejar una carpeta configurada de forma permanente, crea estas variables en **GitHub → Settings → Secrets and variables → Actions → Variables**:
+
+- `DRIVE_FOLDER_URL`: enlace de la carpeta.
+- `DRIVE_FOLDER_MODE`: `fake`, `real` o `subfolders`.
+
+También puedes elegir otra carpeta puntualmente desde **Actions → Deploy to GitHub Pages → Run workflow**. Deja el modo en `configured` para usar `DRIVE_FOLDER_MODE`, o elige otro modo solo para esa ejecución. El proceso recorre las subcarpetas, importa todos los formatos de vídeo compatibles, elimina duplicados idénticos, genera los posters y ajusta automáticamente el número de rondas. Los archivos generados solo forman parte de la web publicada; no se añaden al historial Git.
+
+Una carpeta privada necesita autenticación con Google Drive API y no está cubierta por este flujo público.
 
 ## Reglas del catálogo
 
@@ -82,7 +101,7 @@ npm run build:pages
 
 ## GitHub Pages
 
-El workflow `.github/workflows/deploy-pages.yml` publica automáticamente la web al hacer `push` a `main`. La compilación utiliza rutas relativas, por lo que los vídeos, el catálogo y los recursos de la interfaz funcionan dentro del subdirectorio asignado al repositorio.
+El workflow `.github/workflows/deploy-pages.yml` publica automáticamente la web al hacer `push` a `main` o al ejecutarlo manualmente para sincronizar Drive. La compilación utiliza rutas relativas, por lo que los vídeos, el catálogo y los recursos de la interfaz funcionan dentro del subdirectorio asignado al repositorio.
 
 En la configuración del repositorio, **Settings → Pages → Source** debe estar establecido en **GitHub Actions**.
 

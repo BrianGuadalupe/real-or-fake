@@ -4,6 +4,21 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      folder_url:
+        description: Public Google Drive folder URL (optional override)
+        required: false
+        type: string
+      folder_mode:
+        description: How videos in the folder are classified
+        required: true
+        default: configured
+        type: choice
+        options:
+          - configured
+          - fake
+          - real
+          - subfolders
 
 permissions:
   contents: read
@@ -17,6 +32,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      DRIVE_FOLDER_URL: ${{ inputs.folder_url || vars.DRIVE_FOLDER_URL }}
+      DRIVE_FOLDER_MODE: ${{ (inputs.folder_mode != 'configured' && inputs.folder_mode) || vars.DRIVE_FOLDER_MODE || 'fake' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -27,11 +45,30 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Set up Python
+        if: env.DRIVE_FOLDER_URL != ''
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Drive media tools
+        if: env.DRIVE_FOLDER_URL != ''
+        run: |
+          python -m pip install gdown==6.2.0
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes ffmpeg
+          fi
+
+      - name: Import Google Drive folder
+        if: env.DRIVE_FOLDER_URL != ''
+        run: npm run sync:drive
 
       - name: Build static site
         run: npm run build:pages
@@ -39,8 +76,7 @@ jobs:
       - name: Verify static export
         run: |
           test -f dist/pages/index.html
-          test -f dist/pages/clips.json
-          test "$(find dist/pages/videos -type f -name '*.mp4' | wc -l)" -eq 14
+          npm run validate:pages
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4

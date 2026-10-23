@@ -8,8 +8,11 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "build:pages": "vite build --config vite.pages.config.ts",
+    "build:pages": "npm run validate:media && vite build --config vite.pages.config.ts",
     "preview:pages": "vite preview --config vite.pages.config.ts",
+    "sync:drive": "node scripts/sync-drive-folder.mjs",
+    "validate:media": "node scripts/validate-catalog.mjs public",
+    "validate:pages": "node scripts/validate-catalog.mjs dist/pages",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt"

@@ -202,6 +202,13 @@ export function Game() {
   const [mediaError, setMediaError] = useState(false);
   const [mediaAttempt, setMediaAttempt] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [dataSaver] = useState(() => {
+    if (typeof navigator === 'undefined') return false;
+    const connection = (
+      navigator as Navigator & { connection?: { saveData?: boolean } }
+    ).connection;
+    return Boolean(connection?.saveData);
+  });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const toolStateRef = useRef<{
     phase: Phase;
@@ -229,7 +236,7 @@ export function Game() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('clips.json', { signal: controller.signal })
+    fetch('clips.json', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return (await response.json()) as Catalog;
@@ -242,6 +249,9 @@ export function Game() {
           throw new Error('The catalog does not contain any active videos.');
         }
         setCatalog({ ...data, clips });
+        setRounds(
+          buildRounds(clips, data.settings?.roundCount ?? clips.length),
+        );
         setPhase('intro');
       })
       .catch((error: Error) => {
@@ -253,7 +263,9 @@ export function Game() {
   }, []);
 
   const requestedRoundCount =
-    catalog?.settings?.roundCount ?? DEFAULT_ROUND_COUNT;
+    catalog?.settings?.roundCount ??
+    catalog?.clips.length ??
+    DEFAULT_ROUND_COUNT;
   const currentClip = rounds[currentIndex];
   const nextClip = rounds[currentIndex + 1];
   const canGuess = mediaReady && !mediaError;
@@ -286,7 +298,10 @@ export function Game() {
 
   const startGame = useCallback(() => {
     if (!catalog) return;
-    const nextRounds = buildRounds(catalog.clips, requestedRoundCount);
+    const nextRounds =
+      phase === 'intro' && rounds.length
+        ? rounds
+        : buildRounds(catalog.clips, requestedRoundCount);
     setRounds(nextRounds);
     setAnswers([]);
     setSkippedClipIds([]);
@@ -295,7 +310,7 @@ export function Game() {
     setMediaError(false);
     setMediaAttempt(0);
     setPhase('playing');
-  }, [catalog, requestedRoundCount]);
+  }, [catalog, phase, requestedRoundCount, rounds]);
 
   const submitGuess = useCallback(
     (guess: Truth) => {
@@ -517,7 +532,8 @@ export function Game() {
   return (
     <main className="site-shell min-h-dvh text-foreground">
       <div className="ambient-grid" aria-hidden="true" />
-      {mediaReady && <MediaPreloader clip={nextClip} />}
+      {!dataSaver && phase === 'intro' && <MediaPreloader clip={rounds[0]} />}
+      {!dataSaver && phase === 'answered' && <MediaPreloader clip={nextClip} />}
       <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center border-b border-foreground/20 px-5 py-4 sm:px-8">
         <button
           type="button"
@@ -612,7 +628,7 @@ export function Game() {
               <div className="relative border-b border-black/20 bg-[#070807] lg:border-r lg:border-b-0">
                 <div className="aspect-video min-h-[220px] w-full sm:min-h-[360px]">
                   {!mediaReady && !mediaError && (
-                    <div className="absolute inset-0 z-10 grid place-items-center bg-[#090a09] text-white">
+                    <div className="absolute inset-0 z-10 grid place-items-center bg-black/45 text-white backdrop-blur-[1px]">
                       <div className="text-center">
                         <LoaderCircle className="mx-auto mb-3 size-6 animate-spin text-primary" />
                         <p className="font-mono text-xs uppercase tracking-[0.16em] text-white/60">
